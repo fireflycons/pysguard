@@ -524,7 +524,7 @@ class TimeAclEntry(AclEntryBase):
     def __repr__(self):
         return f'{self.__class__.__name__}({self._op} {self._time_source})'
 
-    def test(self, destination_name: str) -> AccessResult:
+    def test(self, destinations: list) -> AccessResult:
         time_matched = self._time.test()
         if self._op == 'within':
             if time_matched:
@@ -537,7 +537,8 @@ class TimeAclEntry(AclEntryBase):
             else:
                 pass_list = self._else_pass_list
 
-        return next((p for p in pass_list if p.destination.name in [destination_name, 'all', 'none']),
+        all_dest = destinations + ['all', 'none']
+        return next((p for p in pass_list if p.destination.name in all_dest),
                 PassRecord(Destination.none(), AccessResult.DENY, self._redirect))
 
 
@@ -552,13 +553,14 @@ class AclEntry(AclEntryBase):
     def default():
         return DefaultAclEntry()
 
-    def test(self, destination_name: str) -> PassRecord:
+    def test(self, destinations: list) -> PassRecord:
         """
         Test ACL entry's pass list against given destination
 
         :return: PassRecord if found else default None (allow never)
         """
-        return next((p for p in self._pass_list if p.destination.name in [destination_name, 'all', 'none']),
+        all_dest = destinations + ['all', 'none']
+        return next((p for p in self._pass_list if p.destination.name in all_dest),
                 PassRecord(Destination.none(), AccessResult.DENY, self._redirect))
 
 
@@ -580,12 +582,12 @@ class Acl:
         self._acl_entries = acls
         self._unique_desintations = []
 
-    def test(self, request: SquidRequest, destination: str) -> AccessResult:
+    def test(self, request: SquidRequest, destinations: list) -> AccessResult:
         # Find ACL with matching source
         entry = next((e for e in self._acl_entries if e.source.test(request)))
         if not entry:
             raise ConfigurationError("Cannot find ACL matching request source (default should have been returned)")
-        return entry.test(destination)
+        return entry.test(destinations)
 
     @property
     def destinations(self):
@@ -780,8 +782,6 @@ class ListCompiler:
 
 class Database:
 
-    # TODO Same domain can appear in multiple categories
-
     CREATE_SCHEMA = """
 
     create table if not exists categories (
@@ -837,21 +837,19 @@ class Database:
             l = len(host_parts)
             search_domains = ['.'.join(host_parts[(l-ind):]) for ind in range(l, 1, -1)]
             cur.execute(f'select d.domain, c.category_name from domains as d inner join categories as c on d.category_id = c.category_id and d.domain in ({", ".join("?" * len(search_domains))})', search_domains)
-            row = cur.fetchone()
-            if row:
-                destination = row[1]
-                print(f'Match: {row[0]}, Category: {destination}')
+            destinations = [r[1] for r in cur.fetchall()]
+            if destinations:
+                log(f'Match - Category: {", ".join(destinations)}')
                 # Test all ACLs. If any return False, then deny
-                return acl.test(request, destination)
+                return acl.test(request, destinations)
             if not request.is_domain:
                 # Also test URL
                 cur.execute('select u.url, c.category_name from urls as u inner join categories as c on u.category_id = c.category_id and u.url = ?', (request.url,))
-                row = cur.fetchone()
-                if row:
-                    destination = row[1]
-                    print(f'Match: {row[0]}, Category: {destination}')
+                destinations = [r[1] for r in cur.fetchall()]
+                if destinations:
+                    log(f'Match - Category: {", ".join(destinations)}')
                     # Test all ACLs. If any return False, then deny
-                    return acl.test(request, destination)
+                    return acl.test(request, destinations)
         return None
 
 #endregion
@@ -861,6 +859,7 @@ def log(message):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     logmsg = f'{timestamp} [{os.getpid()}] {message.strip()}'
     #os.system(f'echo "{logmsg}" >> /var/log/squid/sg.log')
+    print(logmsg)
 
 log('Started')
 
