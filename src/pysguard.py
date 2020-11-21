@@ -524,7 +524,7 @@ class TimeAclEntry(AclEntryBase):
     def __repr__(self):
         return f'{self.__class__.__name__}({self._op} {self._time_source})'
 
-    def test(self, destinations: list) -> AccessResult:
+    def test(self, destinations: list) -> PassRecord:
         time_matched = self._time.test()
         if self._op == 'within':
             if time_matched:
@@ -582,7 +582,7 @@ class Acl:
         self._acl_entries = acls
         self._unique_desintations = []
 
-    def test(self, request: SquidRequest, destinations: list) -> AccessResult:
+    def test(self, request: SquidRequest, destinations: list) -> PassRecord:
         # Find ACL with matching source
         entry = next((e for e in self._acl_entries if e.source.test(request)))
         if not entry:
