@@ -13,6 +13,10 @@ import stat
 import socket
 import yaml
 import sqlite3
+import argparse
+import locale
+from io import TextIOWrapper
+from multiprocessing import Lock
 from indexedproperty import indexedproperty
 from dns.resolver import resolve
 from typing import NamedTuple
@@ -33,6 +37,33 @@ class AbortError(Exception):
 class ConfigurationError(Exception):
     pass
 
+
+class Logger:
+    """
+    Very simple logger.
+    Python logger module for some reason isn't happy when this process is spawned by Squid
+    """
+
+    def __init__(self, logdir: str, always_console = False):
+        if logdir:
+            if not (os.path.exists(logdir) and os.path.isdir(logdir)):
+                os.mkdir(logdir)
+            self._logfile = os.path.join(logdir, 'pysguard.log')
+        else:
+            self._logfile = None
+        self._log_to_console = always_console or os.isatty(sys.stdin.fileno())
+
+    def log(self, message):
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        logmsg = f'{timestamp} [{str(os.getpid()).rjust(5)}] {message.rstrip()}'
+        if self._logfile:
+            with Lock():
+                with open(self._logfile, "a") as f:
+                    f.write(f'{logmsg}\n')
+        if self._log_to_console:
+            print(logmsg)
+
+logger = None
 
 class Util:
 
@@ -97,7 +128,6 @@ class SquidRequest:
         """
         return self._is_ipaddress
 
-
     @property
     def host(self):
         return self._split_result.netloc
@@ -113,6 +143,10 @@ class SquidRequest:
     @property
     def request_id(self):
         return self._request_id
+
+    @property
+    def formatted_request_id(self):
+        return f'({self._request_id})'.rjust(8)
 
     @property
     def source_ip(self):
@@ -621,10 +655,12 @@ class Configuration:
             return self._props[key]
         return None
 
-    def load(self, config_file: str):
-        if config_file:
-            with open(config_file, 'r') as f:
-                self._config = yaml.safe_load(f)
+    def load(self, config_file: TextIOWrapper):
+        if not config_file:
+            loc = os.path.join(os.path.dirname(__file__), 'pysguard.conf.yaml')
+            config_file = open(loc, 'r')
+        self._config = yaml.safe_load(config_file)
+        config_file.close()
         return self
 
     def parse(self, config: dict = None):
@@ -682,7 +718,7 @@ class ListCompiler:
 
     def __init__(self, list_location:str, lookup:bool = False):
         self.list_location = list_location
-        self._db = Database(list_location)
+        self._db = Database(list_location, True)
         self._lookup = lookup
         self._added = 0
         self._rejected = 0
@@ -751,15 +787,12 @@ class ListCompiler:
                         else:
                             self._duplicates += 1
                     if (self._duplicates + self._added + self._rejected) % 10000 == 0:
-                        print(f'Processed: {self._duplicates + self._added + self._rejected}\r')
+                        logger.log(f'Processed: {(self._duplicates + self._added + self._rejected):n}')
                         pass
                     item = f.readline().strip()
 
-            print('')
-
 
     def compile(self):
-        added = 0
         for category in os.listdir(self.list_location):
             absolute = os.path.join(self.list_location, category)
             st = os.lstat(absolute)
@@ -770,11 +803,11 @@ class ListCompiler:
             urls = os.path.join(absolute, 'urls')
             if not (os.path.exists(domains) or os.path.exists(urls)):
                 continue
-            print(f'Processing {category} ...')
+            logger.log(f'Processing {category} ...')
             category_id = self.add_category(category)
             self.compile_entity(domains, 'domain', category_id)
             self.compile_entity(urls, 'url', category_id)
-            pass
+        logger.log(f'{self._added:n} unique records added')
 
 #endregion
 
@@ -809,8 +842,11 @@ class Database:
     """
 
 
-    def __init__(self, location:str):
+    def __init__(self, location:str, init_db = False):
         dbfile = os.path.join(location, "pyguard.db")
+        if init_db and os.path.exists(dbfile):
+            logger.log("Init Database")
+            os.unlink(dbfile)
         self._conn = sqlite3.connect(dbfile)
         with self._conn:
             self._conn.executescript(self.CREATE_SCHEMA)
@@ -839,7 +875,7 @@ class Database:
             cur.execute(f'select d.domain, c.category_name from domains as d inner join categories as c on d.category_id = c.category_id and d.domain in ({", ".join("?" * len(search_domains))})', search_domains)
             destinations = [r[1] for r in cur.fetchall()]
             if destinations:
-                log(f'Match - Category: {", ".join(destinations)}')
+                logger.log(f'{request.formatted_request_id}| Match - Category: {", ".join(destinations)}')
                 # Test all ACLs. If any return False, then deny
                 return acl.test(request, destinations)
             if not request.is_domain:
@@ -847,7 +883,7 @@ class Database:
                 cur.execute('select u.url, c.category_name from urls as u inner join categories as c on u.category_id = c.category_id and u.url = ?', (request.url,))
                 destinations = [r[1] for r in cur.fetchall()]
                 if destinations:
-                    log(f'Match - Category: {", ".join(destinations)}')
+                    logger.log(f'{request.formatted_request_id}| Match - Category: {", ".join(destinations)}')
                     # Test all ACLs. If any return False, then deny
                     return acl.test(request, destinations)
         return None
@@ -855,15 +891,7 @@ class Database:
 #endregion
 
 
-def log(message):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    logmsg = f'{timestamp} [{os.getpid()}] {message.strip()}'
-    #os.system(f'echo "{logmsg}" >> /var/log/squid/sg.log')
-    print(logmsg)
-
-log('Started')
-
-def run_loop(list_location:str, config:Configuration):
+def run_loop(list_location:str, config:Configuration, debug=False):
     """
         keep looping and processing requests
         request format is based on url_rewrite_extras "%>a %>rm %un"
@@ -872,33 +900,52 @@ def run_loop(list_location:str, config:Configuration):
         input  = sys.stdin.readline()
         while input:
             try:
-                log(f'Request | {input}')
+                logger.log(f'Request | {input}')
                 request = SquidRequest(input)
                 response = SquidResponse(request)
                 if request.method not in ['CONNECT', 'OPTIONS', 'TRACE', 'HEAD']:
                     pass_record = db.lookup(request, config.acl)
-                    if pass_record != None and pass_record.access_result == AccessResult.DENY:
-                        response.redirect(Url=pass_record.redirect)
+                    if pass_record != None:
+                        if pass_record.access_result == AccessResult.DENY:
+                            response.redirect(Url=pass_record.redirect)
+                        if pass_record.destination.log:
+                            logger.log(f"{request.formatted_request_id}| {pass_record.destination.name}: {pass_record.access_result}")
             except AbortError:
-                return
+                break
             except InvalidRequestError as e:
                 response = SquidResponse().error(e)
 
-            log(f'Response| {response}')
+            logger.log(f'Response| {response}')
             sys.stdout.write(f'{response}')
             sys.stdout.flush()
+            if debug:
+                break
             input = sys.stdin.readline()
+        logger.log("Process | Stopped")
+        return
+
 
 
 def compile_lists(list_location: str):
     with ListCompiler(list_location, False) as compiler:
         compiler.compile()
 
-if __name__ == '__main__':
-    location = f'{os.environ["USERPROFILE"]}/Downloads/blacklists.tar/blacklists'
-    config_file = os.path.join(os.path.dirname(__file__), 'pysguard.conf.yaml')
-    config = Configuration().load(config_file).parse()
-#    c = ListCompiler(location, False)
-#    c.compile()
-    run_loop(config.setting['dbhome'], config)
+
+
+locale.setlocale(locale.LC_ALL, '')
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('-C', action='store_true', help='Create database')
+parser.add_argument('-c', type=argparse.FileType('r', encoding='UTF-8'), help='Path to configuation file')
+parser.add_argument('-d', action='store_true', help='Debug mode. Accept single request from pipe and exit')
+args = parser.parse_args()
+
+config = Configuration().load(args.c).parse()
+logger = Logger(config.setting['logdir'], (args.C or args.d))
+logger.log("Process | Started")
+
+if args.C:
+    c = ListCompiler(config.setting['dbhome'], False)
+    c.compile()
+    sys.exit(0)
+run_loop(config.setting['dbhome'], config, args.d)
 
