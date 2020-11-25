@@ -1,6 +1,6 @@
 # PYSGUARD
 
-**WORK IN PROGRESS** This work is incomplete, but is uder active development!
+**WORK IN PROGRESS** This work is incomplete, but is under active development!
 
 PYSGUARD (or Python SquidGuard) is a pure python rewrite of [squidGuard](http://www.squidguard.org/) based on the [Andi Hofmeister](https://github.com/andihofmeister/squidGuard) fork and updated for [Squid](http://www.squid-cache.org/) v4.
 
