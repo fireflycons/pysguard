@@ -10,7 +10,7 @@ This implementation is compatible with the blacklist format of squidGuard and wi
 
 ## Configuration File
 
-This is a YAML repesntation of the oiginal squidGuard config file and is intended to be a semantically close to that as possible. There are a few minor differences
+This is a YAML representation of the oiginal squidGuard config file and is intended to be a semantically close to that as possible. There are a few minor differences
 
 * Variable definitions (e.g. `dbhome`, `logdir`):  These are now grouped under `set`. This is an idea taken from Andi Hofmiester. Environment variables my be referenced by naming them within `$()` e.g. `$(tmp)`
 * Time format: This is now true 24 hour clock (00:00-23:59). 24:00 as an expression of midnight is an error.
@@ -18,7 +18,7 @@ This is a YAML repesntation of the oiginal squidGuard config file and is intende
 * Destination entries: Not required to specify `domainlist` or `urlist`. Locations of these are implied from the destination name and are expected to be subdirectories of the `dbhome` directory.
 * External files for source configuration not yet supported.
 
-See squidGard configuration reference for explanation of what everything does
+See squidGuard configuration reference for explanation of what everything does
 
 * http://www.squidguard.org/Doc/configure.html
 * http://www.squidguard.org/Doc/extended.html
@@ -31,3 +31,7 @@ The following required modules should be installed using pip
 * indexedproperty
 * ipcalc
 * pyyaml
+
+## Coming Soon
+
+A full containerised Squid configuration using this application directed at keeping your kids safe on your home network.
