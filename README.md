@@ -23,6 +23,21 @@ See squidGuard configuration reference for explanation of what everything does
 * http://www.squidguard.org/Doc/configure.html
 * http://www.squidguard.org/Doc/extended.html
 
+## Built-in directives
+
+### Sources
+
+* `all` means all requests. It is processed after any user defined sources thus will match if no other defined source matches.
+
+### Destinations
+
+* `all` means all destinations ALLOW. It is processed after any user defined destinations thus acts as a catch-all
+* `none` means all destinations DENY. It is processed after any user defined destinations thus acts as a catch-all
+
+### ACL Entries
+
+* `default` provides an ACL entry if no other ACL entry matches the conditions. It is processed last thus acts as a catch-all. If a default is not explicitly present in the config file, then a built-in default is used that provides full access.
+
 ## Module Dependencies
 
 The following required modules should be installed using pip
