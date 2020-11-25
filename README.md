@@ -10,7 +10,7 @@ This implementation is compatible with the blacklist format of squidGuard and wi
 
 ## Configuration File
 
-This is a YAML representation of the oiginal squidGuard config file and is intended to be a semantically close to that as possible. There are a few minor differences
+This is a YAML representation of the original squidGuard config file and is intended to be a semantically close to that as possible. There are a few minor differences
 
 * Variable definitions (e.g. `dbhome`, `logdir`):  These are now grouped under `set`. This is an idea taken from Andi Hofmiester. Environment variables my be referenced by naming them within `$()` e.g. `$(tmp)`
 * Time format: This is now true 24 hour clock (00:00-23:59). 24:00 as an expression of midnight is an error.
