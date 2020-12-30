@@ -18,7 +18,6 @@ import locale
 from io import TextIOWrapper
 from multiprocessing import Lock
 from indexedproperty import indexedproperty
-#from dns.resolver import resolve
 from typing import NamedTuple
 from ipcalc import IP, Network
 from urllib.parse import urlsplit
@@ -752,10 +751,9 @@ class ListCompiler:
     Compliles squidGuard format lists to database
     """
 
-    def __init__(self, list_location:str, lookup:bool = False):
+    def __init__(self, list_location:str):
         self.list_location = list_location
         self._db = Database(list_location, True)
-        self._lookup = lookup
         self._added = 0
         self._rejected = 0
         self._duplicates = 0
@@ -778,32 +776,6 @@ class ListCompiler:
             return row[0]
 
 
-    def host_exists(self, item:str) -> bool:
-        if not self._lookup:
-            return True
-        if item.startswith('-'):
-            # Need to work out what these mean. They are invalid for domain names
-            return False
-        split_result = urlsplit(f'http://{item}')
-        if Util.is_ipaddress(split_result.netloc):
-            for port in [443, 80]:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.timeout(0.5)
-                    sock.connect((split_result.netloc, port))
-                    sock.close()
-                    return True
-                except:
-                    pass
-            return False
-        else:
-            try:
-                #resolve(split_result.netloc)
-                return True
-            except:
-                return False
-
-
     def compile_entity(self, filepath:str, entity: str, category_id: int) -> int:
         if not os.path.exists(filepath):
             return 0
@@ -813,15 +785,12 @@ class ListCompiler:
                 cur = self._db.conn.cursor()
                 item = f.readline().strip()
                 while item:
-                    if self._lookup and not self.host_exists(item):
-                        self._rejected += 1
+                    cur.execute(f'select 1 from {entity}s where {entity} = ? and category_id = ?', (item, category_id))
+                    if not cur.fetchone():
+                        self._added += 1
+                        cur.execute(f'insert into {entity}s ({entity}, category_id) values (?, ?)', (item, category_id))
                     else:
-                        cur.execute(f'select 1 from {entity}s where {entity} = ? and category_id = ?', (item, category_id))
-                        if not cur.fetchone():
-                            self._added += 1
-                            cur.execute(f'insert into {entity}s ({entity}, category_id) values (?, ?)', (item, category_id))
-                        else:
-                            self._duplicates += 1
+                        self._duplicates += 1
                     if (self._duplicates + self._added + self._rejected) % 10000 == 0:
                         logger.log(f'Processed: {(self._duplicates + self._added + self._rejected):n}', LogLevel.HIGH)
                         pass
@@ -973,7 +942,7 @@ logger = SquidLogger(args.verbosity)
 logger.log("Process | Started", LogLevel.LOW)
 
 if args.create_db:
-    with ListCompiler(config.setting['dbhome'], False) as c:
+    with ListCompiler(config.setting['dbhome']) as c:
         c.compile()
     sys.exit(0)
 run_loop(config.setting['dbhome'], config, args.debug)
