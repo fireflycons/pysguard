@@ -42,7 +42,6 @@ See squidGuard configuration reference for explanation of what everything does
 
 The following required modules should be installed using pip
 
-* dnspython
 * indexedproperty
 * ipcalc
 * pyyaml
