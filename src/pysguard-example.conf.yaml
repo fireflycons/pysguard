@@ -1,41 +1,44 @@
+# Global settings.
+# redirect specifies the default URL to redirect denied accesses to. Update as you see fit
 set:
-  dbhome: /var/lib/squid/db
-  logdir: $(tmp)/pysguard               # Environment vars may be used in this section
-  redirect: http://example.com
+  dbhome: /var/lib/pysguard/db          # Where to locate blacklist database 
+  logdir: /var/log/squid                # Were to write log files
+  redirect: http://example.com          # Default URL to redirect to.
 
+# A time constraint for when kids should stop browsing because it's bedtime!
 time:
-  - name: afterwork
+  - name: bedtime
     constraints:
-      - weekly * 17:00-23:59            # After work
-      - weekly fridays 16:00-17:00      # On fridays we close earler
-      - date   *.12.24 12:00-23:59      # Christmas Eve (every year)
-      - date   2006.04.14-2006.04.17    # Easter 2006
-      - date   2006.05.01               # May day 2006
+      - weekly * 20:00-23:59            # Every day
+      - weekly fridays 21:00-23:59      # Later when not a school night
+      - weekly saturdays 21:00-23:59    # Later when not a school night
 
 sources:
-  - name: admins
-    ip:
-      - 192.168.2.0-192.168.2.255
-      - 172.16.12.0/24                  # May be CIDR or subnet/netmask
-      - 10.5.3.1/28
-  - name: users                         # User-based rules possible if Squid set up for authentication
-    users: fred joe jim
+  # This source identifies the children. Requires Kerberos to be enabled.
+  - name: kids
+    user:
+    - kid1              # Network logon name as discovered by kerberos
+    - kid2
 
+# Destinations match up with directories found in SquidGuard blacklist tarballs.
 destinations:
-  - name: porn
-    log: pornaccesses                   # Log requests to porn sites with identifier 'pornaccesses'
-  - name: adv
+  - name: adult         # Matches name of a directory within the blacklist tarball
+    log: pornaccesses   # Will create a separate log with this name in the logdir if any URL in the blacklist is hit
   - name: warez
+  - name: social_networks
+    log: socialaccess
 
 acl:
-  - source: all                         # Built-in source 'all' means everybody
-    within:
-      time: afterwork
-      pass: all                         # Built in destination 'all' matches any URL category
+  # For kids, allow them to browse anywhere except the given blacklists until bedtime
+  - source: kids
+    outside:
+      time: bedtime
+      pass: ~adult ~warez ~social_networks all
+      redirect: http://myhost.mydomain/not-for-kids.html    # Redirect here if a blacklisted URL is hit
     else:
-      pass: ~adv ~porn ~warez all
-  - source: admins
+      pass: none                                            # All browsing is disallowed now.
+      redirect: http://myhost.mydomain/bedtime.html         # Redirect here at betime
+
+  # Anyone else can browse anywhere, anytime
+  - source: default
     pass: all
-  - source: default                     # Built-in source 'default' is a catch alll for no other sources matched
-    pass: none                          # Built in destination 'none' matches no URL category
-    redirect: https://google.co.uk
