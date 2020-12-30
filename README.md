@@ -16,6 +16,7 @@ This is a YAML representation of the original squidGuard config file and is inte
 * Time format: This is now true 24 hour clock (00:00-23:59). 24:00 as an expression of midnight is an error.
 * "NOT" indicator: Now a `~` rather than `!` as `!` has meaning in YAML. You can still use `!` however the entire pass entry should be quoted if you do.
 * Destination entries: Not required to specify `domainlist` or `urlist`. Locations of these are implied from the destination name and are expected to be subdirectories of the `dbhome` directory.
+* Time constraint ACLs may have separate redirects for `within`/`outside` and `else` blocks
 * External files for source configuration not yet supported.
 
 See squidGuard configuration reference for explanation of what everything does
@@ -37,6 +38,17 @@ See squidGuard configuration reference for explanation of what everything does
 ### ACL Entries
 
 * `default` provides an ACL entry if no other ACL entry matches the conditions. It is processed last thus acts as a catch-all. If a default is not explicitly present in the config file, then a built-in default is used that provides full access.
+
+## Initialising Blacklist Database
+
+1. Choose a SquidGuard compatible blacklist ([see here](http://www.squidguard.org/blacklists.html))
+1. Download and extract the tarball
+1. Adjust `pysguard.conf.yaml` and set `dbhome` to point to the extracted directory
+1. Run the following to import the lists into the sqlite database
+
+```
+./pysguard.py --create-db --config /path/to/pysguard.conf.yaml
+```
 
 ## Module Dependencies
 
